@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Six Degrees of Wikipedia</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #f4f1ec;
+  color: #1a1a1a;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  text-align: center;
+  padding: 18px 20px 14px;
+  background: #f4f1ec;
+}
+
+header h1 {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+
+header p {
+  font-size: 0.8rem;
+  color: #555;
+  letter-spacing: 0.02em;
+}
+
+#controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: #f4f1ec;
+  flex-wrap: wrap;
+}
+
+#controls input {
+  background: #ffffff;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  padding: 8px 14px;
+  color: #1a1a1a;
+  font-size: 0.9rem;
+  width: 220px;
+  outline: none;
+  font-family: inherit;
+}
+#controls input:focus { background: #ffffff; }
+#controls input::placeholder { color: #c2c2c2; }
+
+.divider { color: #1a1a1a; font-size: 1.2rem; font-weight: 400; }
+
+#find-btn {
+  background: #1a1a1a;
+  color: #f4f1ec;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  padding: 8px 22px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: all 0.15s;
+}
+#find-btn:hover:not(:disabled) { background: #f4f1ec; color: #1a1a1a; }
+#find-btn:disabled { opacity: 0.4; cursor: default; }
+
+#examples {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 20px;
+  flex-wrap: wrap;
+}
+#examples span { color: #666; font-size: 0.78rem; }
+
+.ex-btn {
+  background: transparent;
+  border: 1px solid #888;
+  border-radius: 3px;
+  color: #444;
+  padding: 3px 11px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.ex-btn:hover { border-color: #1a1a1a; color: #1a1a1a; background: #f4f1ec; }
+
+#status-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 120%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: #1a1a1a;
+  color: #f4f1ec;
+  font-size: 0.82rem;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.12);
+  opacity: 0;
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease;
+  z-index: 500;
+  max-width: calc(100vw - 40px);
+  pointer-events: none;
+}
+#status-bar.visible {
+  transform: translate(-50%, 0);
+  opacity: 1;
+  pointer-events: auto;
+}
+#status { color: #f4f1ec; }
+#stats  { color: #999; font-size: 0.72rem; padding-left: 12px; border-left: 1px solid #444; }
+#stats:empty { display: none; padding: 0; border: none; }
+
+#path-display {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;                 /* sits just above the floating status toast */
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1px;
+  padding: 4px 8px;
+  font-size: 0.88rem;
+  z-index: 480;
+  max-width: calc(100vw - 40px);
+}
+#path-display:empty { display: none; }
+#path-display a {
+  text-decoration: none;
+  padding: 2px 8px;
+  border-radius: 3px;
+  color: #1a1a1a;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+#path-display a:hover { background: #1a1a1a; color: #f4f1ec; }
+#path-display a.src,
+#path-display a.tgt { background: #f4f1ec; color: #1a1a1a; border: 1px solid #1a1a1a; }
+.parrow { color: #888; padding: 0 3px; user-select: none; font-size: 0.8rem; }
+
+#graph-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #f4f1ec;
+}
+
+svg#graph { width: 100%; height: 100%; }
+
+.link { transition: stroke 0.4s, stroke-width 0.4s; }
+.node { cursor: pointer; }
+.node:hover { opacity: 0.75; }
+.label { pointer-events: none; user-select: none; }
+
+#tooltip {
+  position: fixed;
+  background: #1a1a1a;
+  border: 1px solid #1a1a1a;
+  border-radius: 3px;
+  padding: 5px 11px;
+  font-size: 0.78rem;
+  color: #f4f1ec;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  max-width: 260px;
+  z-index: 999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #999;
+  pointer-events: none;
+}
+#hint .big {
+  font-family: 'Georgia', serif;
+  font-size: 3.5rem;
+  margin-bottom: 12px;
+  opacity: 0.35;
+  color: #1a1a1a;
+}
+#hint .msg {
+  font-size: 0.88rem;
+  color: #666;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Six Degrees of <em>Wikipedia</em></h1>
+  <p>Watch the hidden web of links connecting any two articles, visualized live</p>
+</header>
+
+<div id="controls">
+  <input id="src-input" type="text" placeholder="Source article…" value="Pizza" />
+  <div class="divider">→</div>
+  <input id="tgt-input" type="text" placeholder="Target article…" value="Black hole" />
+  <button id="find-btn">Find Connection</button>
+</div>
+
+<div id="examples">
+  <span>Try:</span>
+  <button class="ex-btn" data-src="Banana" data-tgt="Philosophy">Banana → Philosophy</button>
+  <button class="ex-btn" data-src="Taylor Swift" data-tgt="Ancient Rome">Taylor Swift → Ancient Rome</button>
+  <button class="ex-btn" data-src="SpongeBob SquarePants" data-tgt="Mathematics">SpongeBob → Mathematics</button>
+  <button class="ex-btn" data-src="Avocado" data-tgt="Genghis Khan">Avocado → Genghis Khan</button>
+  <button class="ex-btn" data-src="Cat" data-tgt="Quantum mechanics">Cat → Quantum mechanics</button>
+</div>
+
+<div id="status-bar" class="visible">
+  <span id="status">Enter two Wikipedia articles above and click Find Connection</span>
+  <span id="stats"></span>
+</div>
+<div id="path-display"></div>
+
+<div id="graph-container">
+  <div id="hint">
+    <div class="big">⚯</div>
+    <div class="msg">Your connection map will appear here</div>
+  </div>
+  <svg id="graph"></svg>
+</div>
+<div id="tooltip"></div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+'use strict';
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+const WIKI        = 'https://en.wikipedia.org/w/api.php';
+const MAX_DEPTH   = 4;
+const FRONT_CAP   = 30;
+const CONCURRENCY = 8;
+const NODE_CAP    = 600;
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let nodesMap = new Map();
+let edgeSet  = new Set();
+let simNodes = [];
+let simEdges = [];
+let pathSet  = new Set();
+let foundPath = [];   // the resolved route, in order: [source, …, target]
+let busy     = false;
+let aborted  = false;
+
+// ─── D3 ──────────────────────────────────────────────────────────────────────
+let sim, svg, gAll, gLinks, gNodes, gPathLinks, gPathNodes, gLabels, zoomBehaviour;
+let autoFit = false;
+const FIT_EASE = 0.08;   // per-tick lerp rate toward the target fit (lower = smoother)
+
+function initD3() {
+  const el = document.getElementById('graph-container');
+  const W = el.clientWidth, H = el.clientHeight;
+  svg = d3.select('#graph').attr('width', W).attr('height', H);
+
+  const defs = svg.append('defs');
+
+  // Soft shadow for emphasized nodes (replaces glow in monochrome design)
+  const shadow = defs.append('filter').attr('id', 'softShadow').attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%');
+  shadow.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', '2').attr('result', 'blur');
+  shadow.append('feOffset').attr('in', 'blur').attr('dx', '0').attr('dy', '1').attr('result', 'offsetBlur');
+  const merge = shadow.append('feMerge');
+  merge.append('feMergeNode').attr('in', 'offsetBlur');
+  merge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+  // Arrow marker for path edges
+  defs.append('marker')
+    .attr('id', 'arr')
+    .attr('viewBox', '0 -4 8 8')
+    .attr('refX', 8).attr('refY', 0)
+    .attr('markerWidth', 5).attr('markerHeight', 5)
+    .attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-4L8,0L0,4Z').attr('fill', '#d63031').attr('opacity', 1);
+
+  zoomBehaviour = d3.zoom().scaleExtent([0.04, 12]).on('zoom', e => {
+    // Any user-driven zoom / pan disables the auto-fit so they can explore freely
+    if (e.sourceEvent) autoFit = false;
+    gAll.attr('transform', e.transform);
+  });
+  svg.call(zoomBehaviour);
+
+  // Layering: explored edges → explored nodes → path edges → path nodes → labels
+  // Path elements live in their own groups so they always paint on top of the cloud.
+  gAll       = svg.append('g');
+  gLinks     = gAll.append('g').attr('class', 'links');
+  gNodes     = gAll.append('g').attr('class', 'nodes');
+  gPathLinks = gAll.append('g').attr('class', 'path-links');
+  gPathNodes = gAll.append('g').attr('class', 'path-nodes');
+  gLabels    = gAll.append('g').attr('class', 'labels');
+
+  sim = d3.forceSimulation()
+    .velocityDecay(0.7)                                       // heavy damping → no jitter
+    .alphaDecay(0.05)                                         // settle quickly
+    .force('link',    d3.forceLink().id(d => d.id).distance(65).strength(0.28))
+    .force('charge',  d3.forceManyBody().strength(-220).distanceMax(360))
+    .force('collide', d3.forceCollide().radius(d => nr(d) + 5))
+    .on('tick', tick);
+  // Note: no forceCenter — source / target are explicitly pinned on the left and right
+}
+
+// Pin source on the left edge and target on the right edge of the container.
+function pinAnchors(srcId, tgtId) {
+  const el = document.getElementById('graph-container');
+  const W = el.clientWidth, H = el.clientHeight;
+  const src = nodesMap.get(srcId);
+  const tgt = nodesMap.get(tgtId);
+  if (src) { src.fx = W * 0.12; src.fy = H / 2; }
+  if (tgt) { tgt.fx = W * 0.88; tgt.fy = H / 2; }
+}
+
+function nr(d) {
+  if (d.group === 'source' || d.group === 'target') return 15;
+  if (pathSet.has(d.id)) return 11;
+  return Math.max(4, Math.min(11, 4 + Math.sqrt(d.degree || 0) * 1.6));
+}
+
+function nodeFill(d) {
+  if (d.group === 'source') return '#f4f1ec';   // matches target — outlined white
+  if (d.group === 'target') return '#f4f1ec';
+  if (pathSet.has(d.id))   return '#333';
+  if (d.group === 'a')     return '#d4d0c8';
+  if (d.group === 'b')     return '#e2ddd3';
+  return '#d8d3cb';
+}
+
+function nodeStroke(d) {
+  if (d.group === 'target') return '#1a1a1a';
+  if (d.group === 'source') return '#1a1a1a';
+  if (pathSet.has(d.id))    return '#1a1a1a';
+  return '#b8b3a8';
+}
+
+function nodeStrokeWidth(d) {
+  if (d.group === 'target') return 2.5;
+  if (d.group === 'source') return 2.5;          // matches target's stroke weight
+  if (pathSet.has(d.id))    return 1.5;
+  return 0.5;
+}
+
+function labelColor(d) {
+  if (d.group === 'source' || d.group === 'target') return '#1a1a1a';
+  return '#333';
+}
+
+function isPath(d) {
+  const s = d.source?.id ?? d.source;
+  const t = d.target?.id ?? d.target;
+  return pathSet.has(s) && pathSet.has(t);
+}
+
+function tick() {
+  // Update all link positions across both gLinks and gPathLinks
+  svg.selectAll('.link')
+    .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+    .attr('x2', d => {
+      if (!isPath(d)) return d.target.x;
+      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+      const len = Math.sqrt(dx*dx+dy*dy) || 1;
+      return d.target.x - dx/len * (nr(d.target) + 6);
+    })
+    .attr('y2', d => {
+      if (!isPath(d)) return d.target.y;
+      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+      const len = Math.sqrt(dx*dx+dy*dy) || 1;
+      return d.target.y - dy/len * (nr(d.target) + 6);
+    });
+
+  // Update all node positions across both gNodes and gPathNodes
+  svg.selectAll('.node')
+    .attr('cx', d => d.x).attr('cy', d => d.y);
+
+  gLabels.selectAll('.label')
+    .attr('x', d => d.x).attr('y', d => d.y - nr(d) - 5);
+
+  // Keep the entire graph framed and centred while the layout is evolving.
+  // Every tick we ease the current transform a small fraction toward the target
+  // fit, which produces a smooth glide instead of step-jumps when the bbox grows.
+  if (autoFit) fitToViewStep();
+}
+
+function fitToViewStep(padding = 80, ease = FIT_EASE) {
+  if (!zoomBehaviour || simNodes.length === 0) return;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of simNodes) {
+    const nx = n.fx ?? n.x, ny = n.fy ?? n.y;
+    if (!isFinite(nx) || !isFinite(ny)) continue;
+    if (nx < minX) minX = nx; if (nx > maxX) maxX = nx;
+    if (ny < minY) minY = ny; if (ny > maxY) maxY = ny;
+  }
+  if (!isFinite(minX)) return;
+
+  const el = document.getElementById('graph-container');
+  const W = el.clientWidth, H = el.clientHeight;
+  const dx = Math.max(1, maxX - minX);
+  const dy = Math.max(1, maxY - minY);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  // Target transform that exactly fits the bbox
+  const targetK  = Math.min((W - 2*padding) / dx, (H - 2*padding) / dy, 1.5);
+  const targetTx = W/2 - cx * targetK;
+  const targetTy = H/2 - cy * targetK;
+
+  // Current transform, eased toward the target
+  const cur  = d3.zoomTransform(svg.node());
+  const newK  = cur.k + (targetK  - cur.k)  * ease;
+  const newTx = cur.x + (targetTx - cur.x) * ease;
+  const newTy = cur.y + (targetTy - cur.y) * ease;
+
+  // If we're already within a sub-pixel of the target, skip the update so we
+  // don't keep firing zoom events on a settled graph
+  if (Math.abs(targetK - cur.k) < 0.0005 &&
+      Math.abs(targetTx - cur.x) < 0.5 &&
+      Math.abs(targetTy - cur.y) < 0.5) return;
+
+  const t = d3.zoomIdentity.translate(newTx, newTy).scale(newK);
+  svg.call(zoomBehaviour.transform, t);
+}
+
+function redraw() {
+  const edgeKey = d => {
+    const s = d.source?.id ?? d.source, t = d.target?.id ?? d.target;
+    return s + '|||' + t;
+  };
+  const isAnchor = d => d.group === 'source' || d.group === 'target' || pathSet.has(d.id);
+
+  const grayNodes = simNodes.filter(d => !isAnchor(d));
+  const anchorNodes = simNodes.filter(isAnchor);
+
+  // ── Gray (explored) edges — every non-path edge ──
+  const gsel = gLinks.selectAll('.link').data(simEdges.filter(d => !isPath(d)), edgeKey);
+  gsel.exit().remove();
+  gsel.enter().append('line').attr('class', 'link')
+    .merge(gsel)
+    .attr('stroke', '#999')
+    .attr('stroke-width', 0.6)
+    .attr('stroke-opacity', 0.35);
+
+  // Shared node behaviour
+  const attachBehaviour = sel => sel
+    .call(d3.drag()
+      .on('start', (ev,d) => { if (!ev.active) sim.alphaTarget(0.05).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag',  (ev,d) => { d.fx=ev.x; d.fy=ev.y; })
+      .on('end',   (ev,d) => {
+        if (!ev.active) sim.alphaTarget(0);
+        // Source / target stay pinned to their left / right anchors
+        if (d.group !== 'source' && d.group !== 'target') { d.fx=null; d.fy=null; }
+      }))
+    .on('click', (ev,d) => window.open('https://en.wikipedia.org/wiki/'+encodeURIComponent(d.id),'_blank'))
+    .on('mouseover', (ev,d) => {
+      const t = document.getElementById('tooltip');
+      t.textContent = d.id;
+      t.style.opacity = 1;
+      t.style.left = (ev.clientX+14)+'px';
+      t.style.top  = (ev.clientY-10)+'px';
+    })
+    .on('mousemove', ev => {
+      const t = document.getElementById('tooltip');
+      t.style.left = (ev.clientX+14)+'px';
+      t.style.top  = (ev.clientY-10)+'px';
+    })
+    .on('mouseout', () => { document.getElementById('tooltip').style.opacity = 0; });
+
+  // ── Gray (explored) nodes ──
+  const grsel = gNodes.selectAll('.node').data(grayNodes, d => d.id);
+  grsel.exit().remove();
+  attachBehaviour(grsel.enter().append('circle').attr('class', 'node'))
+    .merge(grsel)
+    .attr('r',            d => nr(d))
+    .attr('fill',         d => nodeFill(d))
+    .attr('stroke',       d => nodeStroke(d))
+    .attr('stroke-width', d => nodeStrokeWidth(d));
+
+  // ── Anchor / path nodes ──
+  const ansel = gPathNodes.selectAll('.node').data(anchorNodes, d => d.id);
+  ansel.exit().remove();
+  attachBehaviour(ansel.enter().append('circle').attr('class', 'node'))
+    .merge(ansel)
+    .attr('r',            d => nr(d))
+    .attr('fill',         d => nodeFill(d))
+    .attr('filter',       'url(#softShadow)')
+    .attr('stroke',       d => nodeStroke(d))
+    .attr('stroke-width', d => nodeStrokeWidth(d));
+
+  // ── Labels (source, target, path nodes only) ──
+  const lblsel = gLabels.selectAll('.label').data(anchorNodes, d => d.id);
+  lblsel.exit().remove();
+  lblsel.enter().append('text').attr('class','label')
+    .merge(lblsel)
+    .text(d => d.id.length > 26 ? d.id.slice(0,23)+'…' : d.id)
+    .attr('fill',        d => labelColor(d))
+    .attr('font-size',   d => (d.group==='source'||d.group==='target') ? '24px' : '18px')
+    .attr('font-weight', d => (d.group==='source'||d.group==='target') ? 'bold' : '500')
+    .attr('font-family', "'Inter', -apple-system, BlinkMacSystemFont, sans-serif")
+    .attr('text-anchor', 'middle');
+
+  // ── Path edges: rebuild explicitly from foundPath using live node refs ──
+  // Segments are created invisible — revealPath() animates them in once the
+  // layout has settled.
+  gPathLinks.selectAll('*').remove();
+  for (let i = 0; i < foundPath.length - 1; i++) {
+    const sNode = nodesMap.get(foundPath[i]);
+    const tNode = nodesMap.get(foundPath[i+1]);
+    if (!sNode || !tNode) continue;
+    gPathLinks.append('line')
+      .datum({ source: sNode, target: tNode, __path: true })
+      .attr('class', 'link')
+      .attr('stroke', '#d63031')
+      .attr('stroke-width', 3)
+      .attr('stroke-opacity', 0);   // hidden until revealPath() runs
+  }
+
+  sim.nodes(simNodes);
+  sim.force('link').links(simEdges);
+  sim.alpha(0.22).restart();
+}
+
+// Sequentially draws each path segment after the layout has settled,
+// then pans the view so the source ends up centred.
+function revealPath() {
+  if (foundPath.length < 2) return;
+  const SETTLE_MS = 900;        // wait for the simulation to converge
+  const SEG_MS    = 420;        // duration of each segment's draw
+
+  setTimeout(() => {
+    sim.stop();                 // freeze positions so dasharray lengths are stable
+    autoFit = false;            // hand the camera back to the user
+
+    const lines = gPathLinks.selectAll('.link').nodes();
+    lines.forEach((node, i) => {
+      const line = d3.select(node);
+      const x1 = +line.attr('x1'), y1 = +line.attr('y1');
+      const x2 = +line.attr('x2'), y2 = +line.attr('y2');
+      const len = Math.max(1, Math.hypot(x2 - x1, y2 - y1));
+
+      line
+        .attr('stroke-dasharray',  len + ' ' + len)
+        .attr('stroke-dashoffset', len)
+        .attr('stroke-opacity', 1)
+        .transition()
+        .delay(i * SEG_MS)
+        .duration(SEG_MS)
+        .ease(d3.easeCubicOut)
+        .attr('stroke-dashoffset', 0)
+        .on('end', function () {
+          d3.select(this)
+            .attr('stroke-dasharray',  null)
+            .attr('stroke-dashoffset', null)
+            .attr('marker-end', 'url(#arr)');  // arrowhead pops in at segment end
+        });
+    });
+
+    // After the final segment finishes, frame the entire graph in the viewport
+    setTimeout(() => fitToView(), lines.length * SEG_MS + 80);
+  }, SETTLE_MS);
+}
+
+// Pans and zooms so that every node currently in the simulation is visible.
+// Caps zoom-in so a small graph doesn't fill the whole screen on first reveal.
+function fitToView(padding = 140, duration = 750) {
+  if (!zoomBehaviour || simNodes.length === 0) return;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of simNodes) {
+    if (!isFinite(n.x) || !isFinite(n.y)) continue;
+    if (n.x < minX) minX = n.x; if (n.x > maxX) maxX = n.x;
+    if (n.y < minY) minY = n.y; if (n.y > maxY) maxY = n.y;
+  }
+  if (!isFinite(minX)) return;
+
+  const el = document.getElementById('graph-container');
+  const W = el.clientWidth, H = el.clientHeight;
+  const dx = Math.max(1, maxX - minX);
+  const dy = Math.max(1, maxY - minY);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  // Cap at 0.75: anything that fits comfortably never blows up past three-quarter scale
+  const k = Math.min((W - 2*padding) / dx, (H - 2*padding) / dy, 0.75);
+  // Push the final framed graph up by 7% of viewport height
+  const yOffset = -H * 0.07;
+  const t = d3.zoomIdentity
+    .translate(W/2 - cx*k, H/2 - cy*k + yOffset)
+    .scale(k);
+  svg.transition().duration(duration).ease(d3.easeCubicInOut).call(zoomBehaviour.transform, t);
+}
+
+// ─── Graph mutations ─────────────────────────────────────────────────────────
+function addNode(id, group, parentId) {
+  if (!nodesMap.has(id)) {
+    // Anchor / path nodes must always be addable so the final route is never broken
+    const exempt = group === 'source' || group === 'target' || group === 'path';
+    if (!exempt && nodesMap.size >= NODE_CAP) return;
+    const n = { id, group, degree: 0 };
+    // Seed new bubbles near their parent so they don't briefly fly off-screen
+    // (which would otherwise yank the auto-fit camera out)
+    if (parentId && nodesMap.has(parentId)) {
+      const p = nodesMap.get(parentId);
+      const px = p.fx ?? p.x, py = p.fy ?? p.y;
+      if (isFinite(px) && isFinite(py)) {
+        n.x = px + (Math.random() - 0.5) * 10;
+        n.y = py + (Math.random() - 0.5) * 10;
+      }
+    }
+    simNodes.push(n);
+    nodesMap.set(id, n);
+  }
+}
+
+function addEdge(src, tgt) {
+  const key = src+'|||'+tgt;
+  if (!edgeSet.has(key) && nodesMap.has(src) && nodesMap.has(tgt)) {
+    edgeSet.add(key);
+    simEdges.push({ source: src, target: tgt });
+    const s = nodesMap.get(src), t = nodesMap.get(tgt);
+    if (s) s.degree = (s.degree||0)+1;
+    if (t) t.degree = (t.degree||0)+1;
+  }
+}
+
+// ─── Wikipedia API ───────────────────────────────────────────────────────────
+async function resolveTitle(raw) {
+  const p = new URLSearchParams({ action:'query', titles:raw, redirects:'', format:'json', origin:'*' });
+  const d = await fetch(WIKI+'?'+p).then(r=>r.json()).catch(()=>null);
+  const page = Object.values(d?.query?.pages ?? {})[0];
+  return (!page || page.missing !== undefined) ? null : page.title;
+}
+
+async function getOutLinks(title) {
+  const p = new URLSearchParams({
+    action:'query', prop:'links', titles:title,
+    pllimit:'500', plnamespace:'0', format:'json', origin:'*'
+  });
+  try {
+    const d = await fetch(WIKI+'?'+p).then(r=>r.json());
+    const page = Object.values(d?.query?.pages ?? {})[0];
+    return (page?.links ?? []).map(l => l.title);
+  } catch { return []; }
+}
+
+async function getInLinks(title) {
+  const p = new URLSearchParams({
+    action:'query', prop:'linkshere', titles:title,
+    lhlimit:'500', lhnamespace:'0', format:'json', origin:'*'
+  });
+  try {
+    const d = await fetch(WIKI+'?'+p).then(r=>r.json());
+    const page = Object.values(d?.query?.pages ?? {})[0];
+    return (page?.linkshere ?? []).map(l => l.title);
+  } catch { return []; }
+}
+
+async function pool(items, fn, limit) {
+  const out = new Array(items.length);
+  let i = 0;
+  const work = async () => { while (i < items.length) { const j = i++; out[j] = await fn(items[j]); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, work));
+  return out;
+}
+
+// ─── UI helpers ──────────────────────────────────────────────────────────────
+function setStatus(msg, st) {
+  document.getElementById('status').textContent = msg;
+  document.getElementById('stats').textContent = st ?? '';
+  const bar = document.getElementById('status-bar');
+  if (msg) bar.classList.add('visible');
+  else bar.classList.remove('visible');
+}
+
+function showPath(path) {
+  const el = document.getElementById('path-display');
+  el.innerHTML = path.map((p, i) => {
+    const cls = i === 0 ? 'src' : i === path.length-1 ? 'tgt' : '';
+    const href = 'https://en.wikipedia.org/wiki/'+encodeURIComponent(p);
+    return `<a href="${href}" target="_blank" class="${cls}">${p}</a>` +
+           (i < path.length-1 ? '<span class="parrow">→</span>' : '');
+  }).join('');
+}
+
+function buildPath(meeting, vA, vB) {
+  const a = [];
+  let c = meeting;
+  while (c !== null) { a.unshift(c); c = vA.get(c); }
+
+  const b = [];
+  c = vB.get(meeting);
+  while (c !== null) { b.push(c); c = vB.get(c); }
+
+  return [...a, ...b];
+}
+
+// ─── Main BFS ────────────────────────────────────────────────────────────────
+async function run() {
+  if (busy) return;
+  busy = true; aborted = false;
+
+  const btn = document.getElementById('find-btn');
+  btn.textContent = 'Searching…';
+  btn.disabled = true;
+
+  nodesMap.clear(); edgeSet.clear();
+  simNodes.length = 0; simEdges.length = 0;
+  pathSet.clear();
+  foundPath = [];
+  autoFit = false;           // no auto-fit during loading; only frame the graph at the end
+  // Reset the zoom so every search starts from the same baseline.
+  // Pre-zoom out 20% AND centre the viewport on the midpoint of where the
+  // source (W*0.12) and target (W*0.88) will be pinned — i.e. W/2, H/2.
+  if (zoomBehaviour) {
+    const gel = document.getElementById('graph-container');
+    const W = gel.clientWidth, H = gel.clientHeight;
+    const k = 0.8;
+    const midX = W / 2, midY = H / 2;
+    const startTransform = d3.zoomIdentity
+      .translate(W/2 - midX * k, H/2 - midY * k)
+      .scale(k);
+    svg.call(zoomBehaviour.transform, startTransform);
+  }
+  document.getElementById('path-display').innerHTML = '';
+  document.getElementById('hint').style.display = 'none';
+  redraw();
+
+  const rawSrc = document.getElementById('src-input').value.trim();
+  const rawTgt = document.getElementById('tgt-input').value.trim();
+  if (!rawSrc || !rawTgt) {
+    setStatus('Please enter both articles.');
+    busy = false; btn.textContent = 'Find Connection'; btn.disabled = false;
+    return;
+  }
+
+  setStatus('Resolving article titles…');
+  const [srcTitle, tgtTitle] = await Promise.all([resolveTitle(rawSrc), resolveTitle(rawTgt)]);
+
+  if (!srcTitle) { setStatus(`"${rawSrc}" — article not found on Wikipedia`); done(btn); return; }
+  if (!tgtTitle) { setStatus(`"${rawTgt}" — article not found on Wikipedia`); done(btn); return; }
+
+  if (srcTitle === tgtTitle) {
+    addNode(srcTitle, 'source'); pathSet.add(srcTitle);
+    setStatus('Same article — already connected!'); showPath([srcTitle]);
+    redraw(); done(btn); return;
+  }
+
+  addNode(srcTitle, 'source');
+  addNode(tgtTitle, 'target');
+  pinAnchors(srcTitle, tgtTitle);
+  redraw();
+
+  const vA = new Map([[srcTitle, null]]);
+  const vB = new Map([[tgtTitle, null]]);
+  let fA = [srcTitle];
+  let fB = [tgtTitle];
+  let found = null;
+
+  outer:
+  for (let depth = 0; depth < MAX_DEPTH && !found; depth++) {
+    const toA = fA.slice(0, FRONT_CAP);
+    fA = [];
+    setStatus(`Exploring outward from source… (depth ${depth+1})`,
+              `${nodesMap.size} articles · ${simEdges.length} links`);
+
+    const resA = await pool(toA, async t => ({ t, links: await getOutLinks(t) }), CONCURRENCY);
+    if (aborted) break;
+
+    for (const { t, links } of resA) {
+      for (const lk of links) {
+        if (!vA.has(lk)) {
+          vA.set(lk, t);
+          fA.push(lk);
+          addNode(lk, 'a', t);
+          addEdge(t, lk);
+        }
+        if (vB.has(lk)) {
+          if (!vA.has(lk)) vA.set(lk, t);
+          found = buildPath(lk, vA, vB);
+          break outer;
+        }
+      }
+    }
+
+    redraw();
+    await frame();
+
+    const toB = fB.slice(0, FRONT_CAP);
+    fB = [];
+    setStatus(`Exploring inward from target… (depth ${depth+1})`,
+              `${nodesMap.size} articles · ${simEdges.length} links`);
+
+    const resB = await pool(toB, async t => ({ t, links: await getInLinks(t) }), CONCURRENCY);
+    if (aborted) break;
+
+    for (const { t, links } of resB) {
+      for (const lk of links) {
+        if (!vB.has(lk)) {
+          vB.set(lk, t);
+          fB.push(lk);
+          addNode(lk, 'b', t);
+          addEdge(lk, t);
+        }
+        if (vA.has(lk)) {
+          if (!vB.has(lk)) vB.set(lk, t);
+          found = buildPath(lk, vA, vB);
+          break outer;
+        }
+      }
+    }
+
+    redraw();
+    await frame();
+  }
+
+  if (found) {
+    foundPath = found;
+    pathSet.clear();
+    found.forEach(p => pathSet.add(p));
+    found.forEach((p, i) => {
+      if (!nodesMap.has(p)) {
+        const grp = i === 0 ? 'source' : i === found.length-1 ? 'target' : 'path';
+        addNode(p, grp);
+      }
+      if (i < found.length-1) addEdge(found[i], found[i+1]);
+    });
+    redraw();
+    revealPath();
+    const hops = found.length - 1;
+    setStatus(`Connected in ${hops} hop${hops!==1?'s':''}! Click any node to open on Wikipedia.`,
+              `${nodesMap.size} articles explored`);
+    showPath(found);
+  } else {
+    setStatus(aborted ? 'Search stopped.' :
+      `No connection found within ${MAX_DEPTH} hops. Try different articles.`,
+      `${nodesMap.size} articles explored`);
+    // Even when no path was found, frame the explored graph
+    setTimeout(() => fitToView(), 300);
+  }
+
+  done(btn);
+}
+
+function done(btn) {
+  busy = false;
+  btn.textContent = 'Find Connection';
+  btn.disabled = false;
+}
+
+function frame() { return new Promise(r => requestAnimationFrame(() => setTimeout(r, 60))); }
+
+window.addEventListener('DOMContentLoaded', () => {
+  initD3();
+
+  document.getElementById('find-btn').addEventListener('click', run);
+
+  document.querySelectorAll('.ex-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('src-input').value = btn.dataset.src;
+      document.getElementById('tgt-input').value = btn.dataset.tgt;
+      run();
+    });
+  });
+
+  ['src-input','tgt-input'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+  });
+
+  window.addEventListener('resize', () => {
+    const el = document.getElementById('graph-container');
+    svg.attr('width', el.clientWidth).attr('height', el.clientHeight);
+    // Re-pin source / target to the new left / right anchors
+    const src = simNodes.find(n => n.group === 'source');
+    const tgt = simNodes.find(n => n.group === 'target');
+    if (src && tgt) pinAnchors(src.id, tgt.id);
+  });
+});
+</script>
+</body>
+</html>
