@@ -2,7 +2,7 @@
 
 Find the chain of Wikipedia links between any two articles and watch it draw itself, live.
 
-**[Try it →](https://nebinbiju1.github.io/wikigraph/)**
+**[Try it →](https://nebinbiju.com/wikigraph/)**
 
 ## What it does
 
